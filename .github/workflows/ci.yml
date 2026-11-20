@@ -78,12 +78,12 @@ jobs:
             "services/${{ matrix.service }}"
 
       - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
-          image-ref: local/${{ matrix.service }}:${{ github.sha }}
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+        image-ref: local/${{ matrix.service }}:${{ github.sha }}
+        severity: CRITICAL
+        ignore-unfixed: true
+        exit-code: "1"
 
       - name: Configure AWS credentials (OIDC, no stored keys)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
