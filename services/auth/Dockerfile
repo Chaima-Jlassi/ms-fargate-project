@@ -12,7 +12,7 @@ USER node
 
 ENV PORT=3000
 EXPOSE 3000
-RUN npm ls -g tar
+RUN npm install -g npm@latest
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
 

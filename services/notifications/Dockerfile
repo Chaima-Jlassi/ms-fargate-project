@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-
+RUN npm install -g npm@latest
 COPY server.js tracing.js ./
 
 # Run as the unprivileged user that ships with the node image
