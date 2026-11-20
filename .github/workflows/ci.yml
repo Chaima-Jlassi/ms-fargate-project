@@ -1,0 +1,108 @@
+name: CI/CD
+
+# Pull requests: test, build and scan only.
+# Pushes to main: also push the images to ECR. A push of the `latest` tag starts
+# the CodePipeline blue/green deployment for that service (via EventBridge).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "docker-compose.yml"
+      - "scripts/smoke-test.sh"
+      - ".github/workflows/ci.yml"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # lets the job request a short-lived OIDC token for AWS
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'ms-fargate' }}
+
+jobs:
+  terraform:
+    name: Terraform fmt and validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  test:
+    name: Test (docker compose + smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          for f in services/*/*.js; do node --check "$f"; done
+
+      - name: Build and start the stack
+        run: docker compose up --build -d
+
+      - name: Smoke test (login, order, notification)
+        run: ./scripts/smoke-test.sh
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
+
+  build-scan-push:
+    name: Build, scan, push (${{ matrix.service }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [auth, orders, notifications]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build --platform linux/amd64 \
+            -t "local/${{ matrix.service }}:${{ github.sha }}" \
+            "services/${{ matrix.service }}"
+
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: local/${{ matrix.service }}:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Configure AWS credentials (OIDC, no stored keys)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image (commit SHA first, then latest)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/${PROJECT_NAME}/${{ matrix.service }}"
+          docker tag "local/${{ matrix.service }}:${{ github.sha }}" "$IMAGE:${{ github.sha }}"
+          docker tag "local/${{ matrix.service }}:${{ github.sha }}" "$IMAGE:latest"
+          docker push "$IMAGE:${{ github.sha }}"
+          # Pushing `latest` is what starts the CodePipeline deployment.
+          docker push "$IMAGE:latest"

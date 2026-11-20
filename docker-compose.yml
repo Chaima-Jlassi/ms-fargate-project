@@ -1,0 +1,39 @@
+# Local development stack. Mirrors the AWS design:
+#   - services find each other by name (Cloud Map in AWS, compose DNS here)
+#   - Redis stands in for ElastiCache
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  auth:
+    build: ./services/auth
+    environment:
+      PORT: "3000"
+      JWT_SECRET: local-dev-secret
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+    restart: on-failure # auth exits if Redis is not reachable yet; retry
+    ports:
+      - "3001:3000"
+
+  orders:
+    build: ./services/orders
+    environment:
+      PORT: "3000"
+      AUTH_SERVICE_URL: http://auth:3000
+      NOTIFICATIONS_SERVICE_URL: http://notifications:3000
+    depends_on:
+      - auth
+      - notifications
+    ports:
+      - "3002:3000"
+
+  notifications:
+    build: ./services/notifications
+    environment:
+      PORT: "3000"
+    ports:
+      - "3003:3000"
