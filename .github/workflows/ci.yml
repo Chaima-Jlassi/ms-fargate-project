@@ -1,6 +1,8 @@
-
 name: CI/CD
 
+# Pull requests: test, build and scan only.
+# Pushes to main: also push the images to ECR. A push of the `latest` tag starts
+# the CodePipeline blue/green deployment for that service (via EventBridge).
 on:
   push:
     branches: [main]
@@ -14,7 +16,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  id-token: write # lets the job request a short-lived OIDC token for AWS
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
@@ -66,7 +68,6 @@ jobs:
       fail-fast: false
       matrix:
         service: [auth, orders, notifications]
-
     steps:
       - uses: actions/checkout@v4
 
@@ -77,12 +78,12 @@ jobs:
             "services/${{ matrix.service }}"
 
       - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: local/${{ matrix.service }}:${{ github.sha }}
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+        image-ref: local/${{ matrix.service }}:${{ github.sha }}
+        severity: CRITICAL
+        ignore-unfixed: true
+        exit-code: "1"
 
       - name: Configure AWS credentials (OIDC, no stored keys)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -103,4 +104,5 @@ jobs:
           docker tag "local/${{ matrix.service }}:${{ github.sha }}" "$IMAGE:${{ github.sha }}"
           docker tag "local/${{ matrix.service }}:${{ github.sha }}" "$IMAGE:latest"
           docker push "$IMAGE:${{ github.sha }}"
+          # Pushing `latest` is what starts the CodePipeline deployment.
           docker push "$IMAGE:latest"
