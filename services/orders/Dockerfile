@@ -1,10 +1,13 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-RUN npm install -g npm@latest
+RUN npm ci --omit=dev && npm cache clean --force \
+    && rm -rf /usr/local/lib/node_modules/npm \
+              /usr/local/bin/npm /usr/local/bin/npx \
+              /opt/yarn-v1.22.22 /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
 COPY server.js tracing.js ./
 
 # Run as the unprivileged user that ships with the node image
