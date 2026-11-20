@@ -46,7 +46,7 @@ resource "aws_vpc_security_group_ingress_rule" "ecs_from_alb" {
 
 resource "aws_vpc_security_group_ingress_rule" "ecs_from_self" {
   security_group_id            = aws_security_group.ecs.id
-  description                  = "Service-to-service calls (orders -> auth, notifications)"
+  description                  = "Service-to-service calls (orders to auth and notifications)"
   ip_protocol                  = "tcp"
   from_port                    = 3000
   to_port                      = 3000
