@@ -84,7 +84,12 @@ jobs:
          severity: CRITICAL
          ignore-unfixed: true
          exit-code: "1"
-
+      - name: Show OIDC subject
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+            | python3 -c "import sys,json,base64; t=json.load(sys.stdin)['value'].split('.')[1]; t+='='*(-len(t)%4); d=json.loads(base64.urlsafe_b64decode(t)); print({k:d.get(k) for k in ('sub','aud','repository','ref')})"
       - name: Configure AWS credentials (OIDC, no stored keys)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
